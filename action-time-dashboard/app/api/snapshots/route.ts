@@ -1,19 +1,42 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { saveSnapshot, loadSnapshots, loadSnapshotById, deleteSnapshot } from '@/lib/db'
-import { WorkArea } from '@/lib/types'
+import { WorkArea, Snapshot } from '@/lib/types'
+
+// LocalStorage-based snapshot management
+// These functions work with browser localStorage, no SQLite required
+
+const SNAPSHOTS_KEY = 'timetracker-snapshots'
+
+function getSnapshots(): Snapshot[] {
+  if (typeof window === 'undefined') {
+    return []
+  }
+  try {
+    const stored = localStorage.getItem(SNAPSHOTS_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch {
+    return []
+  }
+}
+
+function saveSnapshotsToStorage(snapshots: Snapshot[]) {
+  if (typeof window === 'undefined') {
+    return
+  }
+  localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshots))
+}
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams
     const id = searchParams.get('id')
     
-    if (id) {
-      const snapshot = loadSnapshotById(parseInt(id))
-      return NextResponse.json({ snapshot })
-    }
+    // This endpoint returns mock data that will be handled by client-side localStorage
+    // Client should use localStorage directly instead of API
     
-    const snapshots = loadSnapshots()
-    return NextResponse.json({ snapshots })
+    return NextResponse.json({ 
+      message: 'Use client-side localStorage for snapshots',
+      useLocalStorage: true 
+    })
   } catch (error) {
     console.error('Error loading snapshots:', error)
     return NextResponse.json({ error: 'Failed to load snapshots' }, { status: 500 })
@@ -28,9 +51,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid snapshot data' }, { status: 400 })
     }
     
-    saveSnapshot(name, areas)
-    
-    return NextResponse.json({ success: true, message: 'Snapshot saved successfully' })
+    // Return success, client will handle localStorage
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Use client-side localStorage for snapshots',
+      useLocalStorage: true 
+    })
   } catch (error) {
     console.error('Error saving snapshot:', error)
     return NextResponse.json({ error: 'Failed to save snapshot' }, { status: 500 })
@@ -46,9 +72,12 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Snapshot ID required' }, { status: 400 })
     }
     
-    deleteSnapshot(parseInt(id))
-    
-    return NextResponse.json({ success: true, message: 'Snapshot deleted successfully' })
+    // Return success, client will handle localStorage
+    return NextResponse.json({ 
+      success: true, 
+      message: 'Use client-side localStorage for snapshots',
+      useLocalStorage: true 
+    })
   } catch (error) {
     console.error('Error deleting snapshot:', error)
     return NextResponse.json({ error: 'Failed to delete snapshot' }, { status: 500 })

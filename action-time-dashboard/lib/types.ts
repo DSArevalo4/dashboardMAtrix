@@ -12,4 +12,11 @@ export interface WorkArea {
   activities: Activity[]
 }
 
+export interface Snapshot {
+  id: string
+  name: string
+  data: WorkArea[]
+  createdAt: string
+}
+
 export type AreaId = 'cic' | 'admin' | 'soporte' | 'implementacion'

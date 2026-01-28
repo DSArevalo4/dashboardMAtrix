@@ -4,7 +4,9 @@ import { useState, useEffect } from "react"
 import { AreaCard } from "./area-card"
 import { PercentageMatrix } from "./percentage-matrix"
 import { OverviewChart } from "./overview-chart"
-import type { WorkArea, Activity } from "@/lib/types"
+import { SaveSnapshotDialog } from "./save-snapshot-dialog"
+import { LoadSnapshotDialog } from "./load-snapshot-dialog"
+import type { WorkArea, Activity, Snapshot } from "@/lib/types"
 import { Clock, LayoutGrid, Table2, Save, Download, FileText } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { useToast } from "@/hooks/use-toast"
@@ -47,8 +49,40 @@ const initialAreas: WorkArea[] = [
   },
 ]
 
+const SNAPSHOTS_KEY = 'timetracker-snapshots'
+
+// Helper functions for snapshot management
+function getSnapshots(): Snapshot[] {
+  try {
+    const stored = localStorage.getItem(SNAPSHOTS_KEY)
+    return stored ? JSON.parse(stored) : []
+  } catch {
+    return []
+  }
+}
+
+function saveSnapshot(name: string, data: WorkArea[]): Snapshot {
+  const snapshots = getSnapshots()
+  const newSnapshot: Snapshot = {
+    id: Date.now().toString(),
+    name,
+    data,
+    createdAt: new Date().toISOString()
+  }
+  snapshots.unshift(newSnapshot)
+  localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(snapshots))
+  return newSnapshot
+}
+
+function deleteSnapshot(id: string) {
+  const snapshots = getSnapshots()
+  const filtered = snapshots.filter(s => s.id !== id)
+  localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(filtered))
+}
+
 export function TimeDashboard() {
   const [areas, setAreas] = useState<WorkArea[]>(initialAreas)
+  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [view, setView] = useState<"grid" | "matrix">("grid")
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -57,34 +91,37 @@ export function TimeDashboard() {
   // Load data on mount
   useEffect(() => {
     loadData()
+    loadSnapshots()
   }, [])
 
-  // Auto-save on changes (debounced)
-  useEffect(() => {
-    if (!isLoading) {
-      const timeoutId = setTimeout(() => {
-        saveData()
-      }, 2000) // Auto-save after 2 seconds of no changes
-
-      return () => clearTimeout(timeoutId)
-    }
-  }, [areas, isLoading])
+  const loadSnapshots = () => {
+    setSnapshots(getSnapshots())
+  }
 
   const loadData = async () => {
     try {
+      // Try API first
       const response = await fetch('/api/areas')
-      const data = await response.json()
-      
-      if (data.areas && data.areas.length > 0) {
-        setAreas(data.areas)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.areas && data.areas.length > 0) {
+          setAreas(data.areas)
+          return
+        }
       }
     } catch (error) {
-      console.error('Error loading data:', error)
-      toast({
-        title: "Error",
-        description: "No se pudieron cargar los datos",
-        variant: "destructive"
-      })
+      console.log('API not available, using localStorage')
+    }
+    
+    // Fallback to localStorage
+    try {
+      const stored = localStorage.getItem('timetracker-areas')
+      if (stored) {
+        const data = JSON.parse(stored)
+        setAreas(data)
+      }
+    } catch (error) {
+      console.error('Error loading from localStorage:', error)
     } finally {
       setIsLoading(false)
     }
@@ -93,21 +130,32 @@ export function TimeDashboard() {
   const saveData = async () => {
     setIsSaving(true)
     try {
-      const response = await fetch('/api/areas', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ areas }),
-      })
+      // Try API first
+      try {
+        const response = await fetch('/api/areas', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ areas }),
+        })
 
-      if (!response.ok) {
-        throw new Error('Failed to save')
+        if (response.ok) {
+          toast({
+            title: "Guardado",
+            description: "Datos guardados exitosamente",
+          })
+          return
+        }
+      } catch (apiError) {
+        console.log('API not available, using localStorage')
       }
-
+      
+      // Fallback to localStorage
+      localStorage.setItem('timetracker-areas', JSON.stringify(areas))
       toast({
         title: "Guardado",
-        description: "Datos guardados automáticamente",
+        description: "Datos guardados localmente",
       })
     } catch (error) {
       console.error('Error saving data:', error)
@@ -123,6 +171,59 @@ export function TimeDashboard() {
 
   const handleManualSave = async () => {
     await saveData()
+  }
+
+  const handleSaveSnapshot = (name: string) => {
+    try {
+      saveSnapshot(name, areas)
+      loadSnapshots()
+      toast({
+        title: "Snapshot guardado",
+        description: `"${name}" se guardó exitosamente`,
+      })
+    } catch (error) {
+      console.error('Error saving snapshot:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo guardar el snapshot",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleLoadSnapshot = (snapshot: Snapshot) => {
+    try {
+      setAreas(snapshot.data)
+      toast({
+        title: "Snapshot cargado",
+        description: `"${snapshot.name}" se cargó exitosamente`,
+      })
+    } catch (error) {
+      console.error('Error loading snapshot:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo cargar el snapshot",
+        variant: "destructive"
+      })
+    }
+  }
+
+  const handleDeleteSnapshot = (id: string) => {
+    try {
+      deleteSnapshot(id)
+      loadSnapshots()
+      toast({
+        title: "Snapshot eliminado",
+        description: "El snapshot se eliminó exitosamente",
+      })
+    } catch (error) {
+      console.error('Error deleting snapshot:', error)
+      toast({
+        title: "Error",
+        description: "No se pudo eliminar el snapshot",
+        variant: "destructive"
+      })
+    }
   }
 
   const handleExportPDF = async () => {
@@ -260,6 +361,14 @@ export function TimeDashboard() {
             {isSaving && (
               <span className="text-sm text-muted-foreground">Guardando...</span>
             )}
+
+            <SaveSnapshotDialog onSave={handleSaveSnapshot} isSaving={isSaving} />
+
+            <LoadSnapshotDialog 
+              onLoad={handleLoadSnapshot} 
+              onDelete={handleDeleteSnapshot}
+              snapshots={snapshots}
+            />
 
             <Button
               variant="outline"
